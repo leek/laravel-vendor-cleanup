@@ -27,8 +27,9 @@ return $config
             'operators' => ['=>' => null],
         ],
         'blank_line_after_opening_tag' => true,
-        'braces' => [
-            'allow_single_line_anonymous_class_with_empty_body' => true,
+        'braces_position' => [
+            'functions_and_classes_opening' => 'next_line_unless_newline_at_signature_end',
+            'anonymous_classes_opening' => 'same_line',
         ],
         'compact_nullable_typehint' => true,
         'concat_space' => ['spacing' => 'one'],
