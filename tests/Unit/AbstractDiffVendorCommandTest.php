@@ -92,18 +92,16 @@ class AbstractDiffVendorCommandTest extends TestCase
         $this->assertEquals($expected, $command->exposeToRelativePath($absolutePath));
     }
 
-    public function test_to_relative_path_handles_windows_paths(): void
+    public function test_normalize_path_handles_windows_style_paths(): void
     {
         $command = $this->getTestCommand();
 
-        // Simulate a Windows path
-        $windowsBasePath = 'C:\\Users\\test\\project';
         $windowsAbsolutePath = 'C:\\Users\\test\\project\\config\\app.php';
 
-        // Mock base_path temporarily (we can't easily change it, so we test the normalization)
         $normalizedPath = $command->exposeNormalizePath($windowsAbsolutePath);
 
         $this->assertStringNotContainsString('\\', $normalizedPath);
+        $this->assertEquals('C:/Users/test/project/config/app.php', $normalizedPath);
     }
 
     public function test_strip_comments_removes_block_comments(): void
