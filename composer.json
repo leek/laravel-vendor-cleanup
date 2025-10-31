@@ -1,0 +1,53 @@
+{
+    "name": "leek/laravel-vendor-cleanup",
+    "description": "Laravel commands to detect and clean up unchanged vendor-published files (configs, migrations, views, lang files)",
+    "keywords": [
+        "laravel",
+        "vendor",
+        "cleanup",
+        "diff",
+        "cruft",
+        "published",
+        "config",
+        "migration",
+        "view",
+        "lang"
+    ],
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Leek",
+            "email": "leek@occam.com"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/console": "^11.0|^12.0",
+        "illuminate/filesystem": "^11.0|^12.0",
+        "illuminate/support": "^11.0|^12.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0",
+        "phpunit/phpunit": "^10.5|^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Leek\\LaravelVendorCleanup\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Leek\\LaravelVendorCleanup\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Leek\\LaravelVendorCleanup\\VendorCleanupServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
