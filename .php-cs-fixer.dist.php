@@ -35,7 +35,7 @@ return $config
         'concat_space' => ['spacing' => 'one'],
         'declare_equal_normalize' => true,
         'function_typehint_space' => true,
-        'new_with_braces' => true,
+        'new_with_parentheses' => true,
         'method_argument_space' => [
             'on_multiline' => 'ensure_fully_multiline',
             'keep_multiple_spaces_after_comma' => true,
