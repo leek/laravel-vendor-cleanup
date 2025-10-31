@@ -94,6 +94,83 @@ class ViewDiffVendorCommand extends AbstractDiffVendorCommand
     }
 
     /**
+     * Override formatPathForDisplay to also strip resources/views/ prefix.
+     */
+    protected function formatPathForDisplay(string $path): string
+    {
+        $relativePath = $this->toRelativePath($path);
+
+        // Remove "vendor/" prefix if present
+        if (str_starts_with($relativePath, 'vendor/')) {
+            $relativePath = substr($relativePath, 7);
+        }
+
+        // Remove "resources/views/" prefix if present (implied for views)
+        if (str_starts_with($relativePath, 'resources/views/')) {
+            $relativePath = substr($relativePath, 16); // Remove "resources/views/"
+        }
+
+        return $relativePath;
+    }
+
+    /**
+     * Override displayResults to show orphaned and missing views in single column.
+     */
+    protected function displayResults(array $modified, array $unchanged, array $orphaned, array $missing): void
+    {
+        // Display modified and unchanged tables normally
+        if ($modified) {
+            usort($modified, fn ($a, $b) => $b['diff'] <=> $a['diff']);
+
+            $this->newLine();
+            $this->info('MODIFIED');
+
+            $rows = array_map(function ($item) {
+                $diffColor = $this->getDiffColor($item['diff']);
+
+                return [
+                    $this->formatPathForDisplay($item['path']),
+                    "<{$diffColor}>{$item['diff']}%</>",
+                ];
+            }, $modified);
+
+            $this->table(['File', 'Difference'], $rows);
+        }
+
+        if ($unchanged) {
+            $this->newLine();
+            $this->comment('UNCHANGED (matches vendor)');
+
+            $rows = $this->formatTwoColumnTable($unchanged);
+            $this->table(['File', 'File'], $rows);
+        }
+
+        // Display orphaned views in single column (paths are too long)
+        if ($orphaned) {
+            $this->newLine();
+            $this->line('<fg=red>ORPHANED (no vendor counterpart - likely from uninstalled packages)</>');
+
+            $rows = array_map(function ($file) {
+                return [$this->formatPathForDisplay($file)];
+            }, $orphaned);
+
+            $this->table(['File'], $rows);
+        }
+
+        // Display missing views in single column (paths are too long)
+        if ($missing) {
+            $this->newLine();
+            $this->line('<fg=gray>MISSING (not published locally)</>');
+
+            $rows = array_map(function ($file) {
+                return [$this->formatPathForDisplay($file)];
+            }, $missing);
+
+            $this->table(['File'], $rows);
+        }
+    }
+
+    /**
      * Extract the package name from the vendor path.
      * e.g., vendor/laravel/horizon/... -> horizon
      */

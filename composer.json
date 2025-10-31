@@ -13,12 +13,11 @@
         "view",
         "lang"
     ],
-    "type": "library",
     "license": "MIT",
     "authors": [
         {
-            "name": "Leek",
-            "email": "leek@occam.com"
+            "name": "Chris Jones",
+            "email": "leeked@gmail.com"
         }
     ],
     "require": {
@@ -48,6 +47,5 @@
             ]
         }
     },
-    "minimum-stability": "dev",
     "prefer-stable": true
 }

@@ -176,7 +176,7 @@ abstract class AbstractDiffVendorCommand extends Command
         foreach ($vendorFiles as $vendorFile) {
             $target = $this->getLocalPath($vendorFile);
             if (! $fs->exists($target)) {
-                $missing[] = $target;
+                $missing[] = $vendorFile; // Show vendor path so user knows where it comes from
 
                 continue;
             }
@@ -209,7 +209,7 @@ abstract class AbstractDiffVendorCommand extends Command
                 $diffColor = $this->getDiffColor($item['diff']);
 
                 return [
-                    $this->toRelativePath($item['path']),
+                    $this->formatPathForDisplay($item['path']),
                     "<{$diffColor}>{$item['diff']}%</>",
                 ];
             }, $modified);
@@ -251,7 +251,7 @@ abstract class AbstractDiffVendorCommand extends Command
             if ($this->confirm('Delete '.count($unchanged).' unchanged '.$this->getFileTypeName().'?')) {
                 foreach ($unchanged as $f) {
                     $fs->delete($f);
-                    $this->line('  ✖ deleted '.$this->toRelativePath($f));
+                    $this->line('  ✖ deleted '.$this->formatPathForDisplay($f));
                 }
             }
         }
@@ -355,11 +355,26 @@ abstract class AbstractDiffVendorCommand extends Command
     }
 
     /**
+     * Format a path for display, removing "vendor/" prefix if present.
+     */
+    protected function formatPathForDisplay(string $path): string
+    {
+        $relativePath = $this->toRelativePath($path);
+
+        // Remove "vendor/" prefix if present since it's implied
+        if (str_starts_with($relativePath, 'vendor/')) {
+            return substr($relativePath, 7); // Remove "vendor/"
+        }
+
+        return $relativePath;
+    }
+
+    /**
      * Format files into 2-column table rows.
      */
     protected function formatTwoColumnTable(array $files): array
     {
-        $files = array_map(fn ($f) => $this->toRelativePath($f), $files);
+        $files = array_map(fn ($f) => $this->formatPathForDisplay($f), $files);
         $chunks = array_chunk($files, 2);
 
         return array_map(function ($chunk) {

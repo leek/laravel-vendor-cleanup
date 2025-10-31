@@ -96,4 +96,24 @@ class MigrationDiffVendorCommandTest extends TestCase
 
         $this->assertTrue($result);
     }
+
+    public function test_strip_timestamp_handles_multiple_files_with_same_basename(): void
+    {
+        $command = new MigrationDiffVendorCommand;
+
+        $file1 = '2024_01_01_000000_create_users_table.php';
+        $file2 = '2024_02_01_000000_create_users_table.php';
+        $file3 = '2024_03_01_000000_create_users_table.php';
+
+        $stripped1 = $this->invokePrivateMethod($command, 'stripTimestamp', [$file1]);
+        $stripped2 = $this->invokePrivateMethod($command, 'stripTimestamp', [$file2]);
+        $stripped3 = $this->invokePrivateMethod($command, 'stripTimestamp', [$file3]);
+
+        // All should strip to the same basename
+        $this->assertEquals('create_users_table.php', $stripped1);
+        $this->assertEquals('create_users_table.php', $stripped2);
+        $this->assertEquals('create_users_table.php', $stripped3);
+        $this->assertEquals($stripped1, $stripped2);
+        $this->assertEquals($stripped2, $stripped3);
+    }
 }
