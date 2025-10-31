@@ -296,7 +296,7 @@ abstract class AbstractDiffVendorCommand extends Command
         // Normalize line endings
         $s = str_replace(["\r\n", "\r"], "\n", $s);
         // Normalize tabs to spaces
-        $s = preg_replace("/[ \t]+/m", ' ', $s);
+        $s = preg_replace("/[ \t]+/", ' ', $s);
         // Convert any 2+ spaces to single space
         $s = preg_replace('/[ ]{2,}/', ' ', $s);
         $s = trim($s);
