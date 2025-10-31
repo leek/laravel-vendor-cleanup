@@ -1,0 +1,37 @@
+name: php-cs-fixer
+
+on:
+  push:
+    paths:
+      - "**.php"
+      - ".github/workflows/php-cs-fixer.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php-cs-fixer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: php-cs-fixer
+
+      - name: Run PHP CS Fixer
+        run: php-cs-fixer fix --config=.php-cs-fixer.dist.php --allow-risky=yes
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: Fix styling
+          commit_options: "--no-verify --signoff"

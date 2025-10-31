@@ -1,0 +1,102 @@
+# Dependabot Auto-Merge Workflow
+#
+# PREREQUISITES:
+# This workflow uses gh pr merge --auto, which requires branch protection rules to be configured.
+# Before enabling this workflow, ensure the following are configured in your repository settings:
+#
+# 1. Branch Protection Rules (Settings > Branches > Branch protection rules):
+#    - Require status checks to pass before merging
+#    - Required status checks should include:
+#      * run-tests workflow (all matrix combinations)
+#      * php-cs-fixer workflow
+#    - Require branches to be up to date before merging
+#
+# 2. Repository Variable (Settings > Secrets and variables > Actions > Variables):
+#    - Create a variable named BRANCH_PROTECTION_ENABLED with value "true"
+#    - This signals to the workflow that branch protections are properly configured
+#
+# Without these prerequisites, the --auto flag will merge immediately without waiting for checks.
+#
+name: dependabot-auto-merge
+
+on: pull_request_target
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          compat-lookup: true
+
+      - name: Check branch protection prerequisites
+        id: check-protection
+        run: |
+          if [ "${{ vars.BRANCH_PROTECTION_ENABLED }}" != "true" ]; then
+            echo "⚠️  WARNING: BRANCH_PROTECTION_ENABLED variable is not set to 'true'"
+            echo "⚠️  Auto-merge will proceed without enforcing required status checks"
+            echo "⚠️  Please configure branch protection rules and set BRANCH_PROTECTION_ENABLED=true"
+            echo "protection-enabled=false" >> $GITHUB_OUTPUT
+          else
+            echo "✓ Branch protection is enabled - auto-merge will wait for required checks"
+            echo "protection-enabled=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Auto-merge Dependabot PRs for semver-patch updates
+        if: ${{ steps.metadata.outputs.update-type == 'version-update:semver-patch' && steps.check-protection.outputs.protection-enabled == 'true' }}
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge Dependabot PRs for semver-minor updates (non-Composer)
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' &&
+          steps.metadata.outputs.package-ecosystem != 'composer' &&
+          steps.check-protection.outputs.protection-enabled == 'true'
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge Composer semver-minor updates with compatibility gate
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' &&
+          steps.metadata.outputs.package-ecosystem == 'composer' &&
+          steps.metadata.outputs.compatibility-score >= 90 &&
+          steps.check-protection.outputs.protection-enabled == 'true'
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on Composer updates with low compatibility
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' &&
+          steps.metadata.outputs.package-ecosystem == 'composer' &&
+          steps.metadata.outputs.compatibility-score < 90 &&
+          steps.check-protection.outputs.protection-enabled == 'true'
+        run: |
+          gh pr comment "$PR_URL" --body "⚠️ Composer minor update detected with compatibility score < 90%. Manual review required before merge."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge Dependabot PRs for Action major versions when compatibility is higher than 90%
+        if: |
+          steps.metadata.outputs.package-ecosystem == 'github_actions' &&
+          steps.metadata.outputs.update-type == 'version-update:semver-major' &&
+          steps.metadata.outputs.compatibility-score >= 90 &&
+          steps.check-protection.outputs.protection-enabled == 'true'
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
