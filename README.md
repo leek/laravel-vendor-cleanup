@@ -2,6 +2,8 @@
 
 > Detect and clean up unchanged vendor-published files in your Laravel application.
 
+<img width="1208" height="962" alt="image" src="https://github.com/user-attachments/assets/671ac9a9-4a1b-4b11-bd08-463f48dea1d1" />
+
 This package provides Artisan commands to compare published vendor files (configs, migrations, views, lang files) with their originals in the vendor directory. Find out which files you've modified, which are identical to vendor (cruft), and which files are orphaned from removed packages.
 
 ## Features
