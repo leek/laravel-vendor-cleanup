@@ -4,6 +4,8 @@
 
 <img width="1208" height="962" alt="image" src="https://github.com/user-attachments/assets/671ac9a9-4a1b-4b11-bd08-463f48dea1d1" />
 
+---
+
 This package provides Artisan commands to compare published vendor files (configs, migrations, views, lang files) with their originals in the vendor directory. Find out which files you've modified, which are identical to vendor (cruft), and which files are orphaned from removed packages.
 
 ## Features
@@ -73,6 +75,7 @@ php artisan vendor-cleanup:view
 Each command categorizes files into four groups:
 
 ### MODIFIED (color-coded by % different)
+
 Files you've customized, sorted by difference percentage:
 - 🟢 Green (< 5%) - Very minor changes
 - 🟡 Yellow (< 15%) - Small changes
@@ -80,12 +83,15 @@ Files you've customized, sorted by difference percentage:
 - 🔴 Red (≥ 30%) - Significant changes
 
 ### UNCHANGED
+
 Files identical to vendor - potential candidates for deletion to reduce cruft.
 
 ### ORPHANED
+
 Files with no vendor counterpart - either from removed packages or your own application-specific files.
 
 ### MISSING
+
 Vendor files not yet published locally - available if you need them.
 
 ## How It Works
@@ -114,7 +120,7 @@ All commands support these options:
 
 ## Example Output
 
-```
+```text
 MODIFIED
 +----------------------+------------+
 | File                 | Difference |
@@ -157,7 +163,3 @@ Done.
 ## License
 
 MIT
-
-## Credits
-
-Created by Leek @ Occam
