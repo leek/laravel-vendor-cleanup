@@ -28,8 +28,9 @@ return $config
         ],
         'blank_line_after_opening_tag' => true,
         'braces_position' => [
-            'functions_and_classes_opening' => 'next_line_unless_newline_at_signature_end',
-            'anonymous_classes_opening' => 'same_line',
+            'functions_opening_brace' => 'next_line_unless_newline_at_signature_end',
+            'classes_opening_brace' => 'next_line_unless_newline_at_signature_end',
+            'anonymous_classes_opening_brace' => 'same_line',
         ],
         'compact_nullable_typehint' => true,
         'concat_space' => ['spacing' => 'one'],
