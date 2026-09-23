@@ -127,6 +127,38 @@ abstract class AbstractDiffVendorCommand extends Command
     }
 
     /**
+     * glob() with exact-case matching. On case-insensitive filesystems (macOS,
+     * Windows) glob() also matches differently cased directories, such as
+     * Symfony's Config/ for a config/ pattern.
+     */
+    protected function globExactCase(string $pattern): array
+    {
+        $base = rtrim($this->normalizePath(base_path()), '/');
+        $listings = [];
+
+        return array_values(array_filter(glob($pattern) ?: [], function ($path) use ($base, &$listings) {
+            $path = $this->normalizePath($path);
+
+            if (! str_starts_with($path, $base.'/')) {
+                return true;
+            }
+
+            $dir = $base;
+            foreach (explode('/', substr($path, strlen($base) + 1)) as $segment) {
+                $listings[$dir] ??= scandir($dir) ?: [];
+
+                if (! in_array($segment, $listings[$dir], true)) {
+                    return false;
+                }
+
+                $dir .= '/'.$segment;
+            }
+
+            return true;
+        }));
+    }
+
+    /**
      * Resolve a path to a comparable key (symlinks and ".." resolved when it exists).
      */
     protected function canonicalPath(string $path): string

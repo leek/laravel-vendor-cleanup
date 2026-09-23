@@ -46,8 +46,8 @@ class MigrationDiffVendorCommand extends AbstractDiffVendorCommand
      */
     protected function guessVendorFiles(): array
     {
-        $phpFiles = glob(base_path('vendor/*/*/database/migrations/*.php')) ?: [];
-        $stubFiles = glob(base_path('vendor/*/*/database/migrations/*.php.stub')) ?: [];
+        $phpFiles = $this->globExactCase(base_path('vendor/*/*/database/migrations/*.php'));
+        $stubFiles = $this->globExactCase(base_path('vendor/*/*/database/migrations/*.php.stub'));
 
         $files = [];
         foreach (array_merge($phpFiles, $stubFiles) as $vendorFile) {

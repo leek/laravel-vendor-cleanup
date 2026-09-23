@@ -20,7 +20,7 @@ class ConfigDiffVendorCommand extends AbstractDiffVendorCommand
     protected function guessVendorFiles(): array
     {
         $files = [];
-        foreach (glob(base_path('vendor/*/*/config/*.php')) ?: [] as $vendorFile) {
+        foreach ($this->globExactCase(base_path('vendor/*/*/config/*.php')) as $vendorFile) {
             $files[$vendorFile] = config_path(basename($vendorFile));
         }
 

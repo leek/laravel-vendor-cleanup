@@ -197,6 +197,17 @@ class ComparisonTest extends TestCase
         $this->artisan('vendor-cleanup:config', ['--fail-on-unchanged' => true, '--delete' => true, '--force' => true])->assertSuccessful();
     }
 
+    public function test_differently_cased_vendor_directories_are_not_configs(): void
+    {
+        $classFile = $this->writeLocal(base_path('vendor/acme/kernel/Config/FileLocator.php'), '<?php class FileLocator {}');
+
+        $report = $this->report('vendor-cleanup:config');
+
+        $this->assertNotContains(realpath($classFile), $report['missing']);
+        $this->assertNotContains($classFile, $report['missing']);
+        $this->assertEmpty(array_filter($report['missing'], fn ($path) => str_contains($path, 'acme/kernel')));
+    }
+
     public function test_json_report_lists_every_category(): void
     {
         $vendor = $this->writeVendor('config/probe.php', '<?php return [];');
