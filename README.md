@@ -128,6 +128,29 @@ All commands support these options:
 php artisan vendor-cleanup:config --fail-on-unchanged
 ```
 
+## AI Agent Skill (Laravel Boost)
+
+The package ships a `vendor-cleanup-audit` skill for [Laravel Boost](https://laravel.com/docs/boost). It runs the commands, then checks every finding itself (reading both files, diffing, grepping for references, checking git history) and returns one verified report.
+
+To install it, run Boost's installer and **select `leek/laravel-vendor-cleanup` when it asks which third-party guidelines and skills to install**. Boost never adds third-party skills on its own.
+
+```bash
+php artisan boost:install
+```
+
+Boost copies the skill to each agent it supports (Claude Code, Cursor, Codex and others). Then ask your agent to audit your vendor files, or in Claude Code run it directly:
+
+```text
+/vendor-cleanup-audit
+/vendor-cleanup-audit config view
+```
+
+In Claude Code, the skill hands the file-by-file verification to a subagent on Sonnet, so the checks stay out of your main conversation. It then walks you through the decisions (which files to delete, which orphans to remove, whether to republish stale copies) with multiple-choice questions, or plain-text questions in agents without a question tool.
+
+The audit is read-only: the skill only pre-approves the audit commands with `--json` and a few read-only tools. It deletes only the files you pick, with `git rm`, never with `--delete`, and never offers to delete migrations.
+
+Boost 2.8 or later is recommended. Older versions reformat headings inside code blocks, which this skill avoids but other skills may not.
+
 ## Why Use This?
 
 - **Reduce Cruft** - Delete unchanged published files and rely on vendor defaults

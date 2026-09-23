@@ -1,178 +1,119 @@
 ---
 name: vendor-cleanup-audit
-description: Audit a Laravel app for vendor-published file cruft - orphaned files from uninstalled packages, drift between local copies and vendor originals, and unchanged published files that can be deleted. Use when the user asks to "audit vendor files", "find vendor cruft", "check for orphaned configs/migrations/views/lang files", "detect vendor drift", "find leftover package files", "clean up published files", or mentions the `leek/laravel-vendor-cleanup` package.
+description: Audit a Laravel app's published vendor files (config, migrations, views, lang) against their vendor originals, verify each finding, then guide the user through cleaning up drift, unchanged cruft and orphans.
+when_to_use: Use when the user asks to audit vendor files, find vendor cruft or leftover files from removed packages, check published configs, migrations, views or lang files for drift, or see what they customized before a Laravel or package upgrade. Pass the file types to audit as arguments (config, migration, lang, view); no arguments audits all four.
+argument-hint: "[config] [migration] [lang] [view]"
+compatibility: Requires a Laravel application with the leek/laravel-vendor-cleanup Composer package installed.
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash(php artisan vendor-cleanup:config --json)
+  - Bash(php artisan vendor-cleanup:config --json --normalize)
+  - Bash(php artisan vendor-cleanup:migration --json)
+  - Bash(php artisan vendor-cleanup:migration --json --normalize)
+  - Bash(php artisan vendor-cleanup:lang --json)
+  - Bash(php artisan vendor-cleanup:lang --json --normalize)
+  - Bash(php artisan vendor-cleanup:view --json)
+  - Bash(php artisan vendor-cleanup:view --json --normalize)
+  - Bash(diff -u *)
+  - Bash(composer show *)
+  - Bash(git log --oneline -- *)
 ---
 
 # Vendor Cleanup Audit
 
-Help the user inspect published vendor files (`config/`, `database/migrations/`, `lang/vendor/`, `resources/views/vendor/`) against the originals in `vendor/`. Identifies four categories: **MODIFIED** (drift), **UNCHANGED** (cruft), **ORPHANED** (leftovers from uninstalled packages), and **MISSING** (vendor files not published locally).
+Audit the published vendor files in this Laravel application, verify every finding, then help the user decide what to clean up. The `leek/laravel-vendor-cleanup` package finds the candidates; nothing reaches the user unverified, and nothing is deleted without their explicit choice.
 
-Backed by the `leek/laravel-vendor-cleanup` Composer package.
+Requested scope: $ARGUMENTS
 
-## Treat command output as a lead, not a verdict
+If the scope above is empty or still reads as a placeholder, audit all four types: config, migration, lang and view.
 
-The `vendor-cleanup:*` commands are **file finders**, not auditors. Their categorization is partly heuristic (publish-path matching with basename fallbacks, content hashing with comments stripped, line-based diff percentages). **Always verify each finding yourself** before recommending action to the user. Use the command output as a worklist of file paths to investigate, then independently confirm with `Read`, `git log`, `composer show`, and `grep`.
+## Rules
 
-Mandatory verification per category:
+- The audit is read-only. Never pass `--delete` or `--force` while auditing, and never edit or delete a file until the user has chosen it in step 5.
+- Treat every category from the commands as a lead, not a verdict. Only verified findings go in the report.
+- Report paths relative to the project root, never absolute.
 
-- **UNCHANGED** — re-read both the local file and the vendor original. Confirm they are functionally equivalent. Watch for: locale-specific lang files where basename collides but content is intentional; configs where the published copy intentionally pins values that happen to match current vendor defaults but should not regress if vendor changes upstream.
-- **MODIFIED** — read both files and produce a real diff (`diff -u vendor/.../file local/file`). Decide if drift is intentional (custom values, env wiring) or accidental (stale copy from older package version, partial merge). Low % drift is often whitespace/comment artifacts the package already strips — re-run with `--normalize` to rule those out.
-- **ORPHANED** — never trust the orphan label alone. Cross-check:
-  1. `composer show --name-only` — is the originating package actually gone?
-  2. `grep -r` the filename/key across `app/`, `config/`, `routes/`, `bootstrap/` — is the file still referenced?
-  3. `git log -- <path>` — was it user-authored or `vendor:publish`-generated?
-  An "orphan" may be a deliberately app-owned file that lives in `config/` or a sibling of a package that publishes under a different basename.
-- **MISSING** — confirm the vendor source file actually belongs to a publish group the user intends to consume. Files registered via `publishes()` are real publish candidates; configs found only by the `vendor/*/*/config/*.php` fallback may be package-internal.
+## Steps
 
-If any verification step contradicts the package's category, trust your verification — report the discrepancy to the user and adjust the recommendation.
+1. Check prerequisites. The project root must contain `artisan`, and `composer show leek/laravel-vendor-cleanup` must succeed. If either fails, stop and tell the user what is missing, including the install command `composer require leek/laravel-vendor-cleanup --dev`.
 
-## When to use this skill
+2. Gather leads. For each requested type, run the matching command and parse its JSON:
 
-Invoke when the user wants to:
-
-- Find files left behind after a package was removed (orphans).
-- Detect drift between locally published config/migration/view/lang files and the upstream vendor copy.
-- Identify unchanged published files that can be safely deleted to fall back to vendor defaults.
-- Audit before a Laravel/package upgrade so they know exactly what they have customized.
-- Reduce repository "cruft" from `vendor:publish` operations.
-
-Do **not** invoke for general dependency cleanup (`composer remove`, `composer prune`) - this skill is scoped to **published** vendor files only.
-
-## Prerequisites
-
-Before running any command, verify:
-
-1. The package is installed: `grep leek/laravel-vendor-cleanup composer.json` (or check `composer.lock`). If absent, suggest:
    ```bash
-   composer require leek/laravel-vendor-cleanup --dev
+   php artisan vendor-cleanup:config --json
+   php artisan vendor-cleanup:migration --json
+   php artisan vendor-cleanup:lang --json
+   php artisan vendor-cleanup:view --json
    ```
-2. The user is in a Laravel project root (`artisan` file exists, Laravel 11+ / PHP 8.2+).
-3. The `vendor/` directory is present and populated (`composer install` has been run).
 
-## Commands
+   Each report has five keys:
 
-All four commands share the same flags and output four categories. Pick the command that matches what the user is auditing.
+   | Key | Contents |
+   |---|---|
+   | `modified` | Published files that differ from vendor, each with `path` and `diff` (percentage of lines that differ) |
+   | `unchanged` | Published files identical to vendor once PHP comments are ignored |
+   | `orphaned` | Local files no installed vendor file publishes to |
+   | `missing` | Vendor files that are not published locally (absolute vendor paths) |
+   | `deleted` | Always empty during the audit |
 
-| Audit target | Command | What it scans |
-|---|---|---|
-| Config files | `php artisan vendor-cleanup:config` | `config/*.php` vs registered publish paths and `vendor/*/*/config/*.php` |
-| Migrations | `php artisan vendor-cleanup:migration` | `database/migrations/*.php` vs vendor migrations (timestamp-stripped match) |
-| Lang files | `php artisan vendor-cleanup:lang` | `lang/**/*` vs publish paths, translation namespaces and framework lang files (orphans: `lang/vendor/` only) |
-| Blade views | `php artisan vendor-cleanup:view` | `resources/views/**/*.blade.php` vs publish paths and view namespaces (orphans: `resources/views/vendor/` only) |
+   For low-percentage `modified` entries, run the same command with `--json --normalize`. Files that move to `unchanged` differ only in whitespace.
 
-### Shared flags
+3. Verify each lead with the checks in [references/verification.md](references/verification.md), found at `${CLAUDE_SKILL_DIR}/references/verification.md` in Claude Code.
 
-- `--normalize` - Also normalizes whitespace and line endings before comparison. PHP comments are **always** stripped. Use when whitespace-only diffs (line endings, indentation tweaks) are showing files as modified that the user considers identical.
-- `--delete` - Prompts to delete the **UNCHANGED** files after displaying results. Destructive - see safety section below. Ignored by `vendor-cleanup:migration`, which never deletes.
-- `--force` - Skip the confirmation prompt. Without it, `--delete` deletes nothing in non-interactive runs.
-- `--json` - Machine-readable report with `modified` (path + diff), `unchanged`, `orphaned`, `missing`, `deleted`. Prefer this when parsing output.
-- `--fail-on-unchanged` - Exit 1 if unchanged files remain.
-- `--orphans` (migrations only) - List local migrations with no vendor counterpart; otherwise only their count is shown, since most are app-owned.
+   Verification means reading and diffing many files. If you can hand work to a subagent (in Claude Code, the Agent tool), delegate this step to one running a faster model (pass `model: sonnet`). Give it the full path to the verification guide, the JSON leads, the rules above and the report format below, and ask it to return only the report. Otherwise, verify the leads yourself.
 
-## Workflow
+4. Present the report in the format below.
 
-Run commands **read-only first** (no `--delete`). Treat output as a list of paths to investigate. Verify each path independently. Only after verification, propose actions.
+5. Guide the user through the decisions. Skip this step if the report has nothing to act on, or if the user only asked for a report.
 
-1. **Gather leads** — run relevant audit(s) with no flags:
-   ```bash
-   php artisan vendor-cleanup:config
-   php artisan vendor-cleanup:migration
-   php artisan vendor-cleanup:lang
-   php artisan vendor-cleanup:view
-   ```
-   If user did not specify a target, run all four. Capture the file paths under each category. Do **not** relay the package's verdict to the user yet.
+## Report format
 
-2. **Verify every flagged file yourself.** For each path the package reported:
+Use short Markdown sections and bullets. Do not paste the commands' raw output or wide tables.
 
-   - **UNCHANGED candidates** — `Read` both `vendor/<source>` and the local copy. Confirm content equivalence beyond what the hash check sees (e.g., logically equivalent arrays, intentional value-pinning). Only files that pass your own check are real cruft.
-   - **MODIFIED candidates** — produce a real diff:
-     ```bash
-     diff -u <vendor-source-path> <local-path>
-     ```
-     Read the diff. Classify drift as intentional (env wiring, custom values, app logic) or accidental (stale copy, partial merge, formatting). For low-% items, re-run the relevant command with `--normalize` and see if it drops out — confirms whitespace-only noise.
-   - **ORPHANED candidates** — verify via three checks before treating as deletable:
-     ```bash
-     composer show --name-only | sort
-     grep -rn "<filename-without-ext>" app/ config/ routes/ bootstrap/ database/ resources/
-     git log --oneline -- <path>
-     ```
-     File is a true orphan only if: originating package absent from `composer show`, no live references in app code, and git history shows it arrived via `vendor:publish` (not user-authored). Otherwise treat as app-owned and leave alone.
-   - **MISSING candidates** — open `vendor/<package>/composer.json` and inspect `extra.laravel.providers` + the service provider's `boot()` to confirm the file is actually in a publish group the user would want. Skip files that are package-internal.
+```markdown
 
-3. **Synthesize verified findings.** Drop anything that failed verification. Report only verified results to the user, with the evidence you collected (diff snippets, grep counts, git log lines). Example:
-   > Verified 4 UNCHANGED configs against vendor sources: `cache.php`, `mail.php`, `session.php`, `filesystems.php` — content-equivalent. `config/old-dependency.php` flagged ORPHANED, confirmed: package absent from `composer show`, zero references in app code, last touched by `vendor:publish` commit `abc1234`.
+## Vendor cleanup audit: config, view
 
-4. **Then** propose actions. For UNCHANGED-and-verified, suggest the relevant `--delete` invocation. For ORPHANED-and-verified, propose explicit `rm <path>` (or `git rm`). For MODIFIED, surface the diff so the user decides.
+### Unchanged (safe to delete)
 
-## Safety
+- config/cache.php: identical to vendor/laravel/framework/config/cache.php
 
-- **Never run `--delete` without first running the read-only command and showing the user the UNCHANGED list.**
-- `--delete` only removes UNCHANGED files (never MODIFIED or ORPHANED). Orphan removal is the user's call - if requested, delete with explicit `rm` after confirming each path.
-- Migrations: the command never deletes them. A deleted published migration does not fall back to the vendor copy, so fresh installs would skip creating the package's tables. Only suggest removing one by hand if the package loads its own migrations (`loadMigrationsFrom`) and the user understands the migration history impact; check `php artisan migrate:status`.
-- Always recommend the user has a clean git working tree (`git status`) before any deletion so changes are revertable.
+### Modified (review)
 
-## Worked example
+- config/app.php, 38%: custom providers and locale. Intentional, keep.
+- config/database.php, 9.8%: whitespace only (unchanged under --normalize). Safe to delete.
+- config/queue.php, 6%: custom `background` connection. Keep, and consider adding the upstream `overflow` block by hand.
+- config/cors.php, 12%: stale copy with no local changes. Safe to republish.
 
-User: *"Audit my vendor configs and tell me what's drifted."*
+### Orphaned (confirmed)
 
-Step 1 — gather leads:
+- config/old-package.php: package not installed, no references, added by a vendor:publish commit.
 
-```bash
-php artisan vendor-cleanup:config
+### Not confirmed
+
+- config/billing.php: reported orphaned, but app/Billing reads it. App-owned, keep.
 ```
 
-Sample raw output (treat as worklist only):
+Omit empty sections. Summarize the `missing` list as a count per package unless the user asked about it.
 
-```text
-MODIFIED
-| config/services.php  | 65.3%      |
-| config/app.php       | 38%        |
-| config/database.php  | 9.8%       |
+## Guiding the user
 
-UNCHANGED (matches vendor)
-| config/filesystems.php | config/mail.php    |
-| config/cache.php       | config/session.php |
+If you have a tool that asks the user structured multiple-choice questions (in Claude Code, `AskUserQuestion`), use it. Otherwise ask in plain text, one decision at a time, with numbered options.
 
-ORPHANED (no vendor counterpart)
-| config/old-dependency.php |
-```
+Ask only about verified findings, grouped so each question is one decision:
 
-Step 2 — verify each path independently:
+- **Unchanged and whitespace-only files:** which to delete. Offer "all of them", "none" and, when there are only a few, each file as its own choice.
+- **Confirmed orphans:** which to remove.
+- **Stale copies** (no local changes, only missing upstream updates): keep as is, or republish with `php artisan vendor:publish`. Republishing overwrites the file, so offer it one file at a time.
+- **Customized files missing upstream keys:** keep as is, or add the missing keys by hand. Never offer to republish these, since it would drop the local changes.
 
-```bash
-# MODIFIED: real diffs, not similarity scores
-diff -u vendor/laravel/framework/config/services.php config/services.php
-diff -u vendor/laravel/framework/config/app.php config/app.php
-diff -u vendor/laravel/framework/config/database.php config/database.php
-# Whitespace-only? confirm by re-running normalized:
-php artisan vendor-cleanup:config --normalize
+Recommend the safe choice first, and put the consequence of each option in its description. Never offer to delete migrations. If any are unchanged, explain instead that the package never deletes them, because removing a published migration can stop fresh installs from creating the package's tables.
 
-# UNCHANGED: re-read and confirm equivalence
-# (Read tool on each pair)
+Before changing anything, check `git status`. If the working tree has uncommitted changes, say so and ask whether to continue, since a clean tree makes every deletion revertible.
 
-# ORPHANED: confirm package is truly gone and file unreferenced
-composer show --name-only | grep -i old-dependency || echo "package absent"
-grep -rn "old-dependency" app/ config/ routes/ bootstrap/ database/ resources/
-git log --oneline -- config/old-dependency.php
-```
+Then act on exactly what the user chose:
 
-Step 3 — only verified findings reach the user:
-
-- `services.php` 65% drift confirmed by `diff -u`: custom Stripe/Mailgun keys + new `pusher` block. Real customization, keep.
-- `app.php` 38% drift confirmed: provider list + locale customized. Keep.
-- `database.php` 9.8% drift drops to 0 under `--normalize`: whitespace-only. Treat as UNCHANGED.
-- `filesystems.php`, `mail.php`, `cache.php`, `session.php`: read both sides — content-equivalent. Real cruft.
-- `old-dependency.php`: `composer show` empty for that vendor, zero `grep` hits, last commit was `vendor:publish` 2 years ago. Real orphan.
-
-Step 4 — propose actions:
-
-- `php artisan vendor-cleanup:config --normalize --delete` for the 4 UNCHANGED + `database.php` (it only counts as unchanged under `--normalize`).
-- `git rm config/old-dependency.php` for the verified orphan.
-- Leave `services.php` and `app.php` alone — document drift in upgrade notes.
-
-## Limitations
-
-- Comparison is content-based (SHA256 + line-based diff). PHP files are never executed, so logically equivalent arrays written differently show as MODIFIED. Rename-only refactors in vendor packages may also show as MODIFIED.
-- Migrations match by basename with timestamp stripped (`2024_01_15_123456_create_jobs_table.php` → `create_jobs_table.php`). Custom-named migrations that shadow vendor ones may misclassify - inspect manually.
-- The package only inspects files under the four supported roots. It does not detect orphans under arbitrary paths (e.g. `resources/js/vendor/`).
-- Requires PHP 8.2+ and Laravel 11.x / 12.x / 13.x.
+- Delete the chosen files with `git rm -- <path> ...`, or `rm -- <path> ...` for untracked files. Do not use `vendor-cleanup:* --delete`: it removes every file the command reports as unchanged, including files your verification rejected.
+- Finish with a short summary of what changed and how to undo it (`git restore --staged --worktree -- <path>`).
