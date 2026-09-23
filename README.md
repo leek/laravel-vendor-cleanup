@@ -10,13 +10,15 @@ This package provides Artisan commands to compare published vendor files (config
 
 ## Features
 
+- 🎯 **Accurate Matching** - Uses the publish paths packages register with Laravel, so every file is compared with the exact vendor file it was published from
 - 🔍 **Smart Comparison** - Automatically strips PHP comments and optionally normalizes whitespace
-- 📊 **Diff Percentages** - See exactly how different your files are from vendor originals
+- 📊 **Diff Percentages** - See what share of lines differ from the vendor original
 - 🎨 **Color-Coded Output** - Green/yellow/magenta/red based on difference percentage
 - 🗑️ **Safe Cleanup** - Optionally delete unchanged files with confirmation
 - 🏷️ **Orphan Detection** - Find files from uninstalled packages
 - 📦 **Handles Timestamps** - Smart migration filename matching (strips timestamps)
 - 🔧 **Stub Support** - Detects both `.php` and `.php.stub` vendor files
+- 🤖 **CI Friendly** - JSON output and a failing exit code when unchanged files remain
 
 ## Installation
 
@@ -52,11 +54,17 @@ Compare published migrations with vendor originals (handles timestamped filename
 
 ```bash
 php artisan vendor-cleanup:migration
+
+# List local migrations with no vendor counterpart (hidden by default,
+# since most are your application's own migrations)
+php artisan vendor-cleanup:migration --orphans
 ```
+
+Unchanged migrations are never deleted, even with `--delete`. A deleted config, view or lang file falls back to the vendor copy, but a deleted migration does not: fresh installs would silently skip creating the package's tables.
 
 ### Lang Files
 
-Compare published language files (supports nested directories and JSON files):
+Compare published language files, including the framework's own (`php artisan lang:publish`), namespaced package translations in `lang/vendor/`, and JSON files:
 
 ```bash
 php artisan vendor-cleanup:lang
@@ -64,7 +72,7 @@ php artisan vendor-cleanup:lang
 
 ### View Files
 
-Compare published view files in `resources/views/vendor/`:
+Compare published view files, such as `resources/views/vendor/` overrides, including the framework's pagination, mail and notification views:
 
 ```bash
 php artisan vendor-cleanup:view
@@ -88,7 +96,7 @@ Files identical to vendor - potential candidates for deletion to reduce cruft.
 
 ### ORPHANED
 
-Files with no vendor counterpart - either from removed packages or your own application-specific files.
+Files with no vendor counterpart - either from removed packages or your own application-specific files. For lang files only `lang/vendor/` is checked, and for migrations the list is only shown with `--orphans`.
 
 ### MISSING
 
@@ -96,11 +104,12 @@ Vendor files not yet published locally - available if you need them.
 
 ## How It Works
 
-1. **Finds all vendor files** matching the file type (configs, migrations, etc.)
+1. **Finds vendor files** from the paths packages register with `ServiceProvider::publishes()`, then fills gaps from registered view and translation namespaces, the framework's own config and lang files, and common vendor directory layouts
 2. **Strips PHP comments** from both vendor and local files for comparison
 3. **Optionally normalizes** whitespace with `--normalize` flag
-4. **Compares** files using SHA256 hashing and similarity algorithms
-5. **Categorizes** results and displays with color-coded diff percentages
+4. **Compares** file contents as text. PHP files are never executed, so a config that hardcodes a value your `.env` happens to provide is still reported as modified. JSON files are compared as data, so key order is ignored
+5. **Measures drift** as the share of lines that differ (line-based, like `diff`)
+6. **Categorizes** results and displays with color-coded diff percentages
 
 For migrations, the command intelligently strips timestamps from filenames before matching (e.g., `2024_01_15_123456_create_jobs_table.php` matches `create_jobs_table.php`).
 
@@ -108,8 +117,16 @@ For migrations, the command intelligently strips timestamps from filenames befor
 
 All commands support these options:
 
-- `--delete` - Interactively delete unchanged files after showing results
-- `--normalize` - Also normalize whitespace and line endings (comments are always ignored)
+- `--delete` - Interactively delete unchanged files after showing results (not supported for migrations)
+- `--force` - Delete without a confirmation prompt; required with `--delete` when running non-interactively
+- `--normalize` - Also normalize whitespace, blank lines and line endings (comments are always ignored)
+- `--json` - Print the report as JSON (`modified`, `unchanged`, `orphaned`, `missing`, `deleted`)
+- `--fail-on-unchanged` - Exit with status 1 when unchanged files remain, e.g. to keep cruft out in CI
+
+```bash
+# Fail the build if any published config is identical to its vendor copy
+php artisan vendor-cleanup:config --fail-on-unchanged
+```
 
 ## Why Use This?
 
@@ -158,7 +175,7 @@ Done.
 ## Requirements
 
 - PHP 8.2+
-- Laravel 11.x or 12.x
+- Laravel 11.x, 12.x, or 13.x
 
 ## License
 

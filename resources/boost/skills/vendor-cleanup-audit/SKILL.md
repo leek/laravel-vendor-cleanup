@@ -11,7 +11,7 @@ Backed by the `leek/laravel-vendor-cleanup` Composer package.
 
 ## Treat command output as a lead, not a verdict
 
-The `vendor-cleanup:*` commands are **file finders**, not auditors. Their categorization is heuristic (basename matching, content hashing with comments stripped, `similar_text` similarity). **Always verify each finding yourself** before recommending action to the user. Use the command output as a worklist of file paths to investigate, then independently confirm with `Read`, `git log`, `composer show`, and `grep`.
+The `vendor-cleanup:*` commands are **file finders**, not auditors. Their categorization is partly heuristic (publish-path matching with basename fallbacks, content hashing with comments stripped, line-based diff percentages). **Always verify each finding yourself** before recommending action to the user. Use the command output as a worklist of file paths to investigate, then independently confirm with `Read`, `git log`, `composer show`, and `grep`.
 
 Mandatory verification per category:
 
@@ -22,7 +22,7 @@ Mandatory verification per category:
   2. `grep -r` the filename/key across `app/`, `config/`, `routes/`, `bootstrap/` — is the file still referenced?
   3. `git log -- <path>` — was it user-authored or `vendor:publish`-generated?
   An "orphan" may be a deliberately app-owned file that lives in `config/` or a sibling of a package that publishes under a different basename.
-- **MISSING** — confirm the vendor source file actually belongs to a publish group the user intends to consume. Some vendor files in `vendor/*/config/` are internal and never meant to be published.
+- **MISSING** — confirm the vendor source file actually belongs to a publish group the user intends to consume. Files registered via `publishes()` are real publish candidates; configs found only by the `vendor/*/*/config/*.php` fallback may be package-internal.
 
 If any verification step contradicts the package's category, trust your verification — report the discrepancy to the user and adjust the recommendation.
 
@@ -55,15 +55,19 @@ All four commands share the same flags and output four categories. Pick the comm
 
 | Audit target | Command | What it scans |
 |---|---|---|
-| Config files | `php artisan vendor-cleanup:config` | `config/*.php` vs `vendor/*/config/*.php` |
+| Config files | `php artisan vendor-cleanup:config` | `config/*.php` vs registered publish paths and `vendor/*/*/config/*.php` |
 | Migrations | `php artisan vendor-cleanup:migration` | `database/migrations/*.php` vs vendor migrations (timestamp-stripped match) |
-| Lang files | `php artisan vendor-cleanup:lang` | `lang/vendor/**/*` vs vendor lang files |
-| Blade views | `php artisan vendor-cleanup:view` | `resources/views/vendor/**/*.blade.php` vs vendor views |
+| Lang files | `php artisan vendor-cleanup:lang` | `lang/**/*` vs publish paths, translation namespaces and framework lang files (orphans: `lang/vendor/` only) |
+| Blade views | `php artisan vendor-cleanup:view` | `resources/views/**/*.blade.php` vs publish paths and view namespaces (orphans: `resources/views/vendor/` only) |
 
 ### Shared flags
 
 - `--normalize` - Also normalizes whitespace and line endings before comparison. PHP comments are **always** stripped. Use when whitespace-only diffs (line endings, indentation tweaks) are showing files as modified that the user considers identical.
-- `--delete` - Prompts to delete the **UNCHANGED** files after displaying results. Destructive - see safety section below.
+- `--delete` - Prompts to delete the **UNCHANGED** files after displaying results. Destructive - see safety section below. Ignored by `vendor-cleanup:migration`, which never deletes.
+- `--force` - Skip the confirmation prompt. Without it, `--delete` deletes nothing in non-interactive runs.
+- `--json` - Machine-readable report with `modified` (path + diff), `unchanged`, `orphaned`, `missing`, `deleted`. Prefer this when parsing output.
+- `--fail-on-unchanged` - Exit 1 if unchanged files remain.
+- `--orphans` (migrations only) - List local migrations with no vendor counterpart; otherwise only their count is shown, since most are app-owned.
 
 ## Workflow
 
@@ -104,7 +108,7 @@ Run commands **read-only first** (no `--delete`). Treat output as a list of path
 
 - **Never run `--delete` without first running the read-only command and showing the user the UNCHANGED list.**
 - `--delete` only removes UNCHANGED files (never MODIFIED or ORPHANED). Orphan removal is the user's call - if requested, delete with explicit `rm` after confirming each path.
-- Migrations: deleting an UNCHANGED published migration is safe **only if it has not yet run in production**, or the vendor package will continue to provide it via auto-loaded migrations. Warn the user before deleting any migration file. Check `php artisan migrate:status` if uncertain.
+- Migrations: the command never deletes them. A deleted published migration does not fall back to the vendor copy, so fresh installs would skip creating the package's tables. Only suggest removing one by hand if the package loads its own migrations (`loadMigrationsFrom`) and the user understands the migration history impact; check `php artisan migrate:status`.
 - Always recommend the user has a clean git working tree (`git status`) before any deletion so changes are revertable.
 
 ## Worked example
@@ -162,13 +166,13 @@ Step 3 — only verified findings reach the user:
 
 Step 4 — propose actions:
 
-- `php artisan vendor-cleanup:config --delete` for the 4 UNCHANGED + `database.php`.
+- `php artisan vendor-cleanup:config --normalize --delete` for the 4 UNCHANGED + `database.php` (it only counts as unchanged under `--normalize`).
 - `git rm config/old-dependency.php` for the verified orphan.
 - Leave `services.php` and `app.php` alone — document drift in upgrade notes.
 
 ## Limitations
 
-- Comparison is content-based (SHA256 + `similar_text`). Rename-only refactors in vendor packages may show as MODIFIED even when semantically identical.
+- Comparison is content-based (SHA256 + line-based diff). PHP files are never executed, so logically equivalent arrays written differently show as MODIFIED. Rename-only refactors in vendor packages may also show as MODIFIED.
 - Migrations match by basename with timestamp stripped (`2024_01_15_123456_create_jobs_table.php` → `create_jobs_table.php`). Custom-named migrations that shadow vendor ones may misclassify - inspect manually.
 - The package only inspects files under the four supported roots. It does not detect orphans under arbitrary paths (e.g. `resources/js/vendor/`).
-- Requires PHP 8.2+ and Laravel 11.x / 12.x.
+- Requires PHP 8.2+ and Laravel 11.x / 12.x / 13.x.

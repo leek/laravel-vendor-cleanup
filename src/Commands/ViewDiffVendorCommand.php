@@ -3,50 +3,43 @@
 namespace Leek\LaravelVendorCleanup\Commands;
 
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
 
 class ViewDiffVendorCommand extends AbstractDiffVendorCommand
 {
-    protected $signature = 'vendor-cleanup:view
-                            {--delete : Delete view files that are identical to their vendor version}
-                            {--normalize : Also normalize whitespace and line endings (comments are always ignored)}';
+    protected $name = 'vendor-cleanup:view';
 
     protected $description = 'Report which published view files differ from their vendor originals (and optionally delete unchanged ones).';
 
-    protected function getVendorGlobPattern(): string
+    protected function getPublishRoot(): string
     {
-        return base_path('vendor/*/*/resources/views');
+        return resource_path('views');
     }
 
-    protected function getVendorFiles(): array
+    /**
+     * Map every view namespace registered via loadViewsFrom() to the path
+     * Laravel checks for overrides: resources/views/vendor/{namespace}.
+     */
+    protected function guessVendorFiles(): array
     {
-        $vendorViewDirs = glob(base_path('vendor/*/*/resources/views'), GLOB_ONLYDIR) ?: [];
+        $fs = app(Filesystem::class);
+        $viewsPath = rtrim($this->canonicalPath(resource_path('views')), '/').'/';
         $files = [];
 
-        $fs = app(Filesystem::class);
+        foreach (app('view')->getFinder()->getHints() as $namespace => $paths) {
+            foreach ($paths as $path) {
+                if (! is_dir($path) || str_starts_with($this->canonicalPath($path).'/', $viewsPath)) {
+                    continue;
+                }
 
-        foreach ($vendorViewDirs as $viewDir) {
-            if (is_dir($viewDir)) {
-                $allFiles = $fs->allFiles($viewDir);
-                foreach ($allFiles as $file) {
-                    $path = $file->getPathname();
-                    if (str_ends_with($path, '.blade.php') || str_ends_with($path, '.php')) {
-                        $files[] = $path;
+                foreach ($fs->allFiles($path) as $file) {
+                    if ($this->isComparableFile($file->getPathname())) {
+                        $files[$file->getPathname()] = resource_path("views/vendor/{$namespace}/".$this->normalizePath($file->getRelativePathname()));
                     }
                 }
             }
         }
 
-        return array_unique($files);
-    }
-
-    protected function getLocalPath(string $vendorFile): string
-    {
-        $vendorFile = $this->normalizePath($vendorFile);
-        $packageName = $this->extractPackageName($vendorFile);
-        $relativePath = $this->getRelativeViewPath($vendorFile);
-
-        return resource_path("views/vendor/{$packageName}/{$relativePath}");
+        return $files;
     }
 
     protected function getLocalFiles(): array
@@ -57,35 +50,14 @@ class ViewDiffVendorCommand extends AbstractDiffVendorCommand
             return [];
         }
 
-        $fs = app(Filesystem::class);
-        $allFiles = $fs->allFiles($viewVendorPath);
         $files = [];
-
-        foreach ($allFiles as $file) {
-            $path = $file->getPathname();
-            if (str_ends_with($path, '.blade.php') || str_ends_with($path, '.php')) {
-                $files[] = $path;
+        foreach (app(Filesystem::class)->allFiles($viewVendorPath) as $file) {
+            if ($this->isComparableFile($file->getPathname())) {
+                $files[] = $file->getPathname();
             }
         }
 
         return $files;
-    }
-
-    protected function getVendorBasename(string $vendorFile): string
-    {
-        $vendorFile = $this->normalizePath($vendorFile);
-        $packageName = $this->extractPackageName($vendorFile);
-        $relativePath = $this->getRelativeViewPath($vendorFile);
-
-        return "{$packageName}/{$relativePath}";
-    }
-
-    protected function getLocalBasename(string $localFile): string
-    {
-        $localFile = $this->normalizePath($localFile);
-        $viewVendorPath = $this->normalizePath(resource_path('views/vendor'));
-
-        return Str::after($localFile, $viewVendorPath.'/');
     }
 
     protected function getFileTypeName(): string
@@ -120,8 +92,6 @@ class ViewDiffVendorCommand extends AbstractDiffVendorCommand
     {
         // Display modified and unchanged tables normally
         if ($modified) {
-            usort($modified, fn ($a, $b) => $b['diff'] <=> $a['diff']);
-
             $this->newLine();
             $this->info('MODIFIED');
 
@@ -168,31 +138,5 @@ class ViewDiffVendorCommand extends AbstractDiffVendorCommand
 
             $this->table(['File'], $rows);
         }
-    }
-
-    /**
-     * Extract the package name from the vendor path.
-     * e.g., vendor/laravel/horizon/... -> horizon
-     */
-    private function extractPackageName(string $vendorFile): string
-    {
-        if (preg_match('#vendor/[^/]+/([^/]+)/#', $vendorFile, $matches)) {
-            return $matches[1];
-        }
-
-        return 'unknown';
-    }
-
-    /**
-     * Get the relative path from the views directory.
-     */
-    private function getRelativeViewPath(string $vendorFile): string
-    {
-        // Find the 'resources/views/' part in the path and get everything after it
-        if (preg_match('#resources/views/(.+)$#', $vendorFile, $matches)) {
-            return $matches[1];
-        }
-
-        return basename($vendorFile);
     }
 }

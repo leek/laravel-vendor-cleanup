@@ -3,36 +3,52 @@
 namespace Leek\LaravelVendorCleanup\Commands;
 
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
+use Illuminate\Translation\Translator;
+use ReflectionClass;
 
 class LangDiffVendorCommand extends AbstractDiffVendorCommand
 {
-    protected $signature = 'vendor-cleanup:lang
-                            {--delete : Delete lang files that are identical to their vendor version}
-                            {--normalize : Also normalize whitespace and line endings (comments are always ignored)}';
+    protected $name = 'vendor-cleanup:lang';
 
     protected $description = 'Report which published lang files differ from their vendor originals (and optionally delete unchanged ones).';
 
-    protected function getVendorGlobPattern(): string
+    protected function getPublishRoot(): string
     {
-        return base_path('vendor/*/*/lang');
+        return lang_path();
     }
 
-    protected function getVendorFiles(): array
+    protected function isComparableFile(string $path): bool
     {
-        $vendorPackages = glob(base_path('vendor/*/*/lang'), GLOB_ONLYDIR) ?: [];
-        $files = [];
+        return str_ends_with($path, '.php') || str_ends_with($path, '.json');
+    }
+
+    /**
+     * Map the framework's lang files (copied by lang:publish) and every
+     * namespace registered via loadTranslationsFrom() to its override path.
+     */
+    protected function guessVendorFiles(): array
+    {
+        $sources = [];
+
+        $frameworkLang = dirname((new ReflectionClass(Translator::class))->getFileName()).'/lang';
+        if (is_dir($frameworkLang)) {
+            $sources[$frameworkLang] = lang_path();
+        }
+
+        $loader = app('translator')->getLoader();
+        foreach ($loader->namespaces() as $namespace => $path) {
+            if (is_dir($path) && ! $this->isInside($path, lang_path())) {
+                $sources[$path] = lang_path("vendor/{$namespace}");
+            }
+        }
 
         $fs = app(Filesystem::class);
+        $files = [];
 
-        foreach ($vendorPackages as $langDir) {
-            if (is_dir($langDir)) {
-                $allFiles = $fs->allFiles($langDir);
-                foreach ($allFiles as $file) {
-                    $path = $file->getPathname();
-                    if (str_ends_with($path, '.php') || str_ends_with($path, '.json')) {
-                        $files[] = $path;
-                    }
+        foreach ($sources as $sourceDir => $targetDir) {
+            foreach ($fs->allFiles($sourceDir) as $file) {
+                if ($this->isComparableFile($file->getPathname())) {
+                    $files[$file->getPathname()] = $this->normalizePath($targetDir).'/'.$this->normalizePath($file->getRelativePathname());
                 }
             }
         }
@@ -40,54 +56,26 @@ class LangDiffVendorCommand extends AbstractDiffVendorCommand
         return $files;
     }
 
-    protected function getLocalPath(string $vendorFile): string
-    {
-        $vendorFile = $this->normalizePath($vendorFile);
-        $relativePath = $this->getRelativeLangPath($vendorFile);
-
-        return lang_path($relativePath);
-    }
-
+    /**
+     * Only namespaced package overrides can be orphaned; the rest of lang/
+     * holds the application's own translations.
+     */
     protected function getLocalFiles(): array
     {
-        $langPath = lang_path();
+        $vendorLangPath = lang_path('vendor');
 
-        if (! is_dir($langPath)) {
+        if (! is_dir($vendorLangPath)) {
             return [];
         }
 
-        $fs = app(Filesystem::class);
-        $allFiles = $fs->allFiles($langPath);
         $files = [];
-
-        foreach ($allFiles as $file) {
-            $path = $file->getPathname();
-            if (str_ends_with($path, '.php') || str_ends_with($path, '.json')) {
-                $files[] = $path;
+        foreach (app(Filesystem::class)->allFiles($vendorLangPath) as $file) {
+            if ($this->isComparableFile($file->getPathname())) {
+                $files[] = $file->getPathname();
             }
         }
 
         return $files;
-    }
-
-    protected function getVendorBasename(string $vendorFile): string
-    {
-        $vendorFile = $this->normalizePath($vendorFile);
-
-        return $this->getRelativeLangPath($vendorFile);
-    }
-
-    protected function getLocalBasename(string $localFile): string
-    {
-        $localFile = $this->normalizePath($localFile);
-        $langPath = $this->normalizePath(lang_path());
-
-        return Str::after($localFile, $langPath.'/');
-    }
-
-    protected function shouldCompareAsArrays(): bool
-    {
-        return true;
     }
 
     protected function getFileTypeName(): string
@@ -95,23 +83,8 @@ class LangDiffVendorCommand extends AbstractDiffVendorCommand
         return 'lang file(s)';
     }
 
-    /**
-     * Get the relative path from the lang directory.
-     * Handles vendor package paths like /lang/vendor/{package}/{rest}.
-     */
-    private function getRelativeLangPath(string $vendorFile): string
+    private function isInside(string $path, string $directory): bool
     {
-        // Check for vendor package pattern: /lang/vendor/{package}/{rest}
-        if (preg_match('#/lang/vendor/([^/]+)/(.+)$#', $vendorFile, $matches)) {
-            return 'vendor/'.$matches[1].'/'.$matches[2];
-        }
-
-        // Standard pattern: /lang/{rest}
-        if (preg_match('#/lang/(.+)$#', $vendorFile, $matches)) {
-            return $matches[1];
-        }
-
-        // Fallback to basename
-        return basename($vendorFile);
+        return str_starts_with($this->canonicalPath($path).'/', rtrim($this->canonicalPath($directory), '/').'/');
     }
 }

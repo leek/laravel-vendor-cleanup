@@ -8,73 +8,32 @@ use ReflectionClass;
 
 class ViewDiffVendorCommandTest extends TestCase
 {
-    private function invokePrivateMethod(object $object, string $method, array $args = []): mixed
+    private function invokeMethod(object $object, string $method, array $args = []): mixed
     {
-        $reflection = new ReflectionClass($object);
-        $method = $reflection->getMethod($method);
-        $method->setAccessible(true);
-
-        return $method->invokeArgs($object, $args);
+        return (new ReflectionClass($object))->getMethod($method)->invokeArgs($object, $args);
     }
 
-    public function test_extract_package_name_from_vendor_path(): void
+    public function test_format_path_strips_views_prefix(): void
     {
-        $command = new ViewDiffVendorCommand;
+        $result = $this->invokeMethod(new ViewDiffVendorCommand, 'formatPathForDisplay', [resource_path('views/vendor/horizon/layout.blade.php')]);
 
-        $vendorPath = '/vendor/laravel/horizon/resources/views/index.blade.php';
-        $result = $this->invokePrivateMethod($command, 'extractPackageName', [$vendorPath]);
-
-        $this->assertEquals('horizon', $result);
+        $this->assertEquals('vendor/horizon/layout.blade.php', $result);
     }
 
-    public function test_extract_package_name_handles_windows_paths(): void
+    public function test_maps_view_namespaces_to_override_paths(): void
     {
-        $command = new ViewDiffVendorCommand;
+        $this->writeVendor('views/dashboard/index.blade.php', '<div></div>');
+        $this->registerPackage(views: ['acme-ui' => $this->vendorPath('views')]);
 
-        // Path must be normalized first in actual usage
-        $vendorPath = 'C:/vendor/laravel/horizon/resources/views/index.blade.php';
-        $result = $this->invokePrivateMethod($command, 'extractPackageName', [$vendorPath]);
+        $vendorFiles = $this->invokeMethod(new ViewDiffVendorCommand, 'guessVendorFiles');
 
-        $this->assertEquals('horizon', $result);
+        $this->assertContains(resource_path('views/vendor/acme-ui/dashboard/index.blade.php'), array_values($vendorFiles));
     }
 
-    public function test_extract_package_name_returns_unknown_for_invalid_path(): void
+    public function test_maps_framework_view_namespaces(): void
     {
-        $command = new ViewDiffVendorCommand;
+        $vendorFiles = $this->invokeMethod(new ViewDiffVendorCommand, 'guessVendorFiles');
 
-        $invalidPath = '/invalid/path/file.php';
-        $result = $this->invokePrivateMethod($command, 'extractPackageName', [$invalidPath]);
-
-        $this->assertEquals('unknown', $result);
-    }
-
-    public function test_get_relative_view_path_extracts_path_after_views(): void
-    {
-        $command = new ViewDiffVendorCommand;
-
-        $vendorPath = '/vendor/laravel/horizon/resources/views/dashboard/index.blade.php';
-        $result = $this->invokePrivateMethod($command, 'getRelativeViewPath', [$vendorPath]);
-
-        $this->assertEquals('dashboard/index.blade.php', $result);
-    }
-
-    public function test_get_relative_view_path_returns_basename_if_no_views_directory(): void
-    {
-        $command = new ViewDiffVendorCommand;
-
-        $invalidPath = '/vendor/laravel/horizon/index.blade.php';
-        $result = $this->invokePrivateMethod($command, 'getRelativeViewPath', [$invalidPath]);
-
-        $this->assertEquals('index.blade.php', $result);
-    }
-
-    public function test_get_vendor_basename_combines_package_and_relative_path(): void
-    {
-        $command = new ViewDiffVendorCommand;
-
-        $vendorPath = '/vendor/laravel/horizon/resources/views/dashboard/index.blade.php';
-        $result = $this->invokePrivateMethod($command, 'getVendorBasename', [$vendorPath]);
-
-        $this->assertEquals('horizon/dashboard/index.blade.php', $result);
+        $this->assertContains(resource_path('views/vendor/pagination/tailwind.blade.php'), array_values($vendorFiles));
     }
 }

@@ -8,95 +8,34 @@ use ReflectionClass;
 
 class LangDiffVendorCommandTest extends TestCase
 {
-    private function invokePrivateMethod(object $object, string $method, array $args = []): mixed
+    private function invokeMethod(object $object, string $method, array $args = []): mixed
     {
-        $reflection = new ReflectionClass($object);
-        $method = $reflection->getMethod($method);
-        $method->setAccessible(true);
-
-        return $method->invokeArgs($object, $args);
+        return (new ReflectionClass($object))->getMethod($method)->invokeArgs($object, $args);
     }
 
-    public function test_get_relative_lang_path_extracts_path_after_lang(): void
+    public function test_compares_php_and_json_files(): void
     {
         $command = new LangDiffVendorCommand;
 
-        $vendorPath = '/vendor/laravel/horizon/lang/en/messages.php';
-        $result = $this->invokePrivateMethod($command, 'getRelativeLangPath', [$vendorPath]);
-
-        $this->assertEquals('en/messages.php', $result);
+        $this->assertTrue($this->invokeMethod($command, 'isComparableFile', ['/lang/en/messages.php']));
+        $this->assertTrue($this->invokeMethod($command, 'isComparableFile', ['/lang/en.json']));
+        $this->assertFalse($this->invokeMethod($command, 'isComparableFile', ['/lang/README.md']));
     }
 
-    public function test_get_relative_lang_path_handles_nested_directories(): void
+    public function test_only_namespaced_overrides_can_be_orphaned(): void
     {
-        $command = new LangDiffVendorCommand;
+        $this->writeLocal(lang_path('en/app-owned.php'), '<?php return [];');
+        $override = $this->writeLocal(lang_path('vendor/acme/en/messages.php'), '<?php return [];');
 
-        $vendorPath = '/vendor/laravel/horizon/lang/en/validation/errors.php';
-        $result = $this->invokePrivateMethod($command, 'getRelativeLangPath', [$vendorPath]);
+        $localFiles = $this->invokeMethod(new LangDiffVendorCommand, 'getLocalFiles');
 
-        $this->assertEquals('en/validation/errors.php', $result);
+        $this->assertSame([$override], $localFiles);
     }
 
-    public function test_get_relative_lang_path_returns_basename_if_no_lang_directory(): void
+    public function test_maps_framework_lang_files_to_lang_root(): void
     {
-        $command = new LangDiffVendorCommand;
+        $vendorFiles = $this->invokeMethod(new LangDiffVendorCommand, 'guessVendorFiles');
 
-        $invalidPath = '/vendor/laravel/horizon/messages.php';
-        $result = $this->invokePrivateMethod($command, 'getRelativeLangPath', [$invalidPath]);
-
-        $this->assertEquals('messages.php', $result);
-    }
-
-    public function test_get_vendor_basename_returns_relative_lang_path(): void
-    {
-        $command = new LangDiffVendorCommand;
-
-        $vendorPath = '/vendor/laravel/horizon/lang/en/messages.php';
-        $result = $this->invokePrivateMethod($command, 'getVendorBasename', [$vendorPath]);
-
-        $this->assertEquals('en/messages.php', $result);
-    }
-
-    public function test_should_compare_as_arrays_returns_true(): void
-    {
-        $command = new LangDiffVendorCommand;
-
-        $reflection = new ReflectionClass($command);
-        $method = $reflection->getMethod('shouldCompareAsArrays');
-        $method->setAccessible(true);
-
-        $result = $method->invoke($command);
-
-        $this->assertTrue($result);
-    }
-
-    public function test_get_relative_lang_path_handles_vendor_package_paths(): void
-    {
-        $command = new LangDiffVendorCommand;
-
-        $vendorPath = '/vendor/laravel/horizon/lang/vendor/horizon/en/messages.php';
-        $result = $this->invokePrivateMethod($command, 'getRelativeLangPath', [$vendorPath]);
-
-        $this->assertEquals('vendor/horizon/en/messages.php', $result);
-    }
-
-    public function test_get_relative_lang_path_handles_nested_vendor_package_paths(): void
-    {
-        $command = new LangDiffVendorCommand;
-
-        $vendorPath = '/vendor/laravel/horizon/lang/vendor/horizon/en/validation/errors.php';
-        $result = $this->invokePrivateMethod($command, 'getRelativeLangPath', [$vendorPath]);
-
-        $this->assertEquals('vendor/horizon/en/validation/errors.php', $result);
-    }
-
-    public function test_get_vendor_basename_handles_vendor_package_paths(): void
-    {
-        $command = new LangDiffVendorCommand;
-
-        $vendorPath = '/vendor/laravel/horizon/lang/vendor/horizon/en/messages.php';
-        $result = $this->invokePrivateMethod($command, 'getVendorBasename', [$vendorPath]);
-
-        $this->assertEquals('vendor/horizon/en/messages.php', $result);
+        $this->assertContains(lang_path('en/validation.php'), array_values($vendorFiles));
     }
 }

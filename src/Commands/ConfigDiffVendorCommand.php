@@ -4,30 +4,32 @@ namespace Leek\LaravelVendorCleanup\Commands;
 
 class ConfigDiffVendorCommand extends AbstractDiffVendorCommand
 {
-    protected $signature = 'vendor-cleanup:config
-                            {--delete : Delete config files that are identical to their vendor version}
-                            {--normalize : Also normalize whitespace and line endings (comments are always ignored)}';
+    protected $name = 'vendor-cleanup:config';
 
     protected $description = 'Report which published config files differ from their vendor originals (and optionally delete unchanged ones).';
 
-    protected function getVendorGlobPattern(): string
+    protected function getPublishRoot(): string
     {
-        return base_path('vendor/*/*/config/*.php');
+        return config_path();
     }
 
-    protected function getLocalPath(string $vendorFile): string
+    /**
+     * Configs not registered for publishing, such as the framework's own
+     * (copied by config:publish), are matched by basename.
+     */
+    protected function guessVendorFiles(): array
     {
-        return config_path(basename($vendorFile));
+        $files = [];
+        foreach (glob(base_path('vendor/*/*/config/*.php')) ?: [] as $vendorFile) {
+            $files[$vendorFile] = config_path(basename($vendorFile));
+        }
+
+        return $files;
     }
 
     protected function getLocalFiles(): array
     {
         return glob(config_path('*.php')) ?: [];
-    }
-
-    protected function shouldCompareAsArrays(): bool
-    {
-        return true;
     }
 
     protected function getFileTypeName(): string

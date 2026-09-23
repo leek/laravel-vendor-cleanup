@@ -3,36 +3,60 @@
 namespace Leek\LaravelVendorCleanup\Commands;
 
 use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Console\Input\InputOption;
 
 class MigrationDiffVendorCommand extends AbstractDiffVendorCommand
 {
-    protected $signature = 'vendor-cleanup:migration
-                            {--delete : Delete migration files that are identical to their vendor version}
-                            {--normalize : Also normalize whitespace and line endings (comments are always ignored)}';
+    protected $name = 'vendor-cleanup:migration';
 
     protected $description = 'Report which published migration files differ from their vendor originals (and optionally delete unchanged ones).';
 
-    protected function getVendorGlobPattern(): string
+    protected function getOptions(): array
     {
-        // Not used, we'll get files in handle() method
-        return base_path('vendor/*/*/database/migrations/*.php');
+        return array_merge(parent::getOptions(), [
+            ['orphans', null, InputOption::VALUE_NONE, 'List local migrations that have no vendor counterpart'],
+        ]);
+    }
+
+    protected function getPublishRoot(): string
+    {
+        return database_path('migrations');
+    }
+
+    protected function isComparableFile(string $path): bool
+    {
+        return str_ends_with($path, '.php') || str_ends_with($path, '.php.stub');
     }
 
     /**
-     * Get all vendor migration files including .php.stub files.
+     * A deleted published migration does not fall back to the vendor copy the
+     * way configs, views and lang files do: fresh installs would silently
+     * skip creating the package's tables.
      */
-    private function getVendorMigrationFiles(): array
+    protected function canDelete(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Guess vendor migrations (including .php.stub files) that are not
+     * registered for publishing, skipping test and example migrations.
+     * Local paths are unknown until matched, since published names carry
+     * a fresh timestamp.
+     */
+    protected function guessVendorFiles(): array
     {
         $phpFiles = glob(base_path('vendor/*/*/database/migrations/*.php')) ?: [];
         $stubFiles = glob(base_path('vendor/*/*/database/migrations/*.php.stub')) ?: [];
 
-        return array_merge($phpFiles, $stubFiles);
-    }
+        $files = [];
+        foreach (array_merge($phpFiles, $stubFiles) as $vendorFile) {
+            if (! $this->shouldExcludeVendorFile($vendorFile)) {
+                $files[$vendorFile] = database_path('migrations/'.basename($vendorFile));
+            }
+        }
 
-    protected function getLocalPath(string $vendorFile): string
-    {
-        // This won't be used since we override handle()
-        return database_path('migrations/'.basename($vendorFile));
+        return $files;
     }
 
     protected function getLocalFiles(): array
@@ -72,8 +96,6 @@ class MigrationDiffVendorCommand extends AbstractDiffVendorCommand
     {
         // Display modified migrations in single column with diff inline
         if ($modified) {
-            usort($modified, fn ($a, $b) => $b['diff'] <=> $a['diff']);
-
             $this->newLine();
             $this->info('MODIFIED');
 
@@ -99,16 +121,21 @@ class MigrationDiffVendorCommand extends AbstractDiffVendorCommand
             $this->table(['File'], $rows);
         }
 
-        // Display orphaned migrations in single column
+        // Most local migrations are the application's own, so only list them on request
         if ($orphaned) {
             $this->newLine();
-            $this->line('<fg=red>ORPHANED (no vendor counterpart - likely from uninstalled packages)</>');
 
-            $rows = array_map(function ($file) {
-                return [$this->formatPathForDisplay($file)];
-            }, $orphaned);
+            if ($this->option('orphans')) {
+                $this->line('<fg=red>NO VENDOR COUNTERPART (application-owned or from removed packages)</>');
 
-            $this->table(['File'], $rows);
+                $rows = array_map(function ($file) {
+                    return [$this->formatPathForDisplay($file)];
+                }, $orphaned);
+
+                $this->table(['File'], $rows);
+            } else {
+                $this->line('<fg=gray>'.count($orphaned).' local migration(s) have no vendor counterpart (application-owned or from removed packages). Use --orphans to list them.</>');
+            }
         }
 
         // Display missing migrations in single column
@@ -168,102 +195,48 @@ class MigrationDiffVendorCommand extends AbstractDiffVendorCommand
     }
 
     /**
-     * Override collectAndCategorizeFiles to implement custom matching logic for timestamped migrations.
+     * Override collectAndCategorizeFiles to match timestamped migrations by name.
      */
     protected function collectAndCategorizeFiles(array $vendorFiles, Filesystem $fs): array
     {
-        // Build a map of vendor migrations by their base name (without timestamp)
-        // Store arrays to handle multiple files with the same stripped basename
+        // Map vendor and local migrations by name without timestamp. Store lists
+        // to handle multiple files with the same stripped name.
         $vendorMap = [];
-        foreach ($vendorFiles as $vendorFile) {
-            $basename = basename($vendorFile);
-            $strippedName = $this->stripTimestamp($basename);
-            $vendorMap[$strippedName][] = $vendorFile;
+        foreach (array_keys($vendorFiles) as $vendorFile) {
+            $vendorMap[$this->stripTimestamp(basename($vendorFile))][] = $vendorFile;
         }
 
-        // Build a map of local migrations by their base name (without timestamp)
-        // Store arrays to handle multiple files with the same stripped basename
-        $localFiles = $this->getLocalFiles();
         $localMap = [];
-        foreach ($localFiles as $localFile) {
-            $basename = basename($localFile);
-            $strippedName = $this->stripTimestamp($basename);
-            $localMap[$strippedName][] = $localFile;
+        foreach ($this->getLocalFiles() as $localFile) {
+            $localMap[$this->stripTimestamp(basename($localFile))][] = $localFile;
         }
 
-        // Use keyed arrays to deduplicate entries when comparing multiple combinations
-        $unchangedMap = [];
-        $modifiedMap = [];
-        $missingMap = [];
-        $orphanedMap = [];
+        $unchanged = [];
+        $modified = [];
+        $missing = [];
+        $orphaned = [];
 
-        // Check for orphaned migrations (no vendor counterpart)
         foreach ($localMap as $strippedName => $localFileList) {
             if (! isset($vendorMap[$strippedName])) {
-                // All local files with this basename are orphaned
-                foreach ($localFileList as $localFile) {
-                    $orphanedMap[$localFile] = true;
-                }
+                array_push($orphaned, ...$localFileList);
             }
         }
 
-        // Compare vendor migrations to local ones
         foreach ($vendorMap as $strippedName => $vendorFileList) {
             if (! isset($localMap[$strippedName])) {
-                // All vendor files with this basename are missing locally
-                foreach ($vendorFileList as $vendorFile) {
-                    $missingMap[$vendorFile] = true;
-                }
+                array_push($missing, ...$vendorFileList);
 
                 continue;
             }
 
-            // Compare all combinations of vendor and local files with this basename
-            // Store the best (lowest) diff for each file to avoid duplicates
+            // Compare all combinations; the best match for each local file wins
             foreach ($vendorFileList as $vendorFile) {
                 foreach ($localMap[$strippedName] as $localFile) {
-                    $result = $this->compareFileContents($vendorFile, $localFile, $fs);
-
-                    if ($result['status'] === 'unchanged') {
-                        $unchangedMap[$localFile] = true;
-                        // Remove from modified if it was there
-                        unset($modifiedMap[$localFile]);
-                    } else {
-                        // Only store if unchanged map doesn't have it, and either:
-                        // - We don't have this file yet, or
-                        // - The new diff is lower (better match)
-                        if (! isset($unchangedMap[$localFile])) {
-                            if (! isset($modifiedMap[$localFile]) || $result['diff'] < $modifiedMap[$localFile]) {
-                                $modifiedMap[$localFile] = $result['diff'];
-                            }
-                        }
-                    }
+                    $this->recordComparison($unchanged, $modified, $localFile, $this->compareFileContents($vendorFile, $localFile, $fs));
                 }
             }
         }
 
-        // Convert maps back to arrays
-        $unchanged = array_keys($unchangedMap);
-        $missing = array_keys($missingMap);
-        $orphaned = array_keys($orphanedMap);
-
-        // Convert modified map to the expected format
-        $modified = [];
-        foreach ($modifiedMap as $path => $diff) {
-            $modified[] = ['path' => $path, 'diff' => $diff];
-        }
-
-        return [$unchanged, $modified, $missing, $orphaned];
-    }
-
-    /**
-     * Override getVendorFiles to filter out test/example migrations.
-     */
-    protected function getVendorFiles(): array
-    {
-        $allVendorFiles = $this->getVendorMigrationFiles();
-
-        // Filter out test/example migrations
-        return array_filter($allVendorFiles, fn ($file) => ! $this->shouldExcludeVendorFile($file));
+        return [array_keys($unchanged), $this->formatModified($modified), $missing, $orphaned];
     }
 }
