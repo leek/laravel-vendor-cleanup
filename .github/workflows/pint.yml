@@ -1,0 +1,46 @@
+name: pint
+
+on:
+  push:
+    # Branches only: a tag push has no branch to commit fixes back to
+    branches: ["**"]
+    paths:
+      - "**.php"
+      - "pint.json"
+      - ".github/workflows/pint.yml"
+
+# The repository default token is read-only; committing fixes needs write access
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pint:
+    runs-on: ubuntu-latest
+    # Dependabot pushes get a read-only token regardless of the permissions above
+    if: github.actor != 'dependabot[bot]'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Run Pint
+        run: vendor/bin/pint
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: Fix styling
+          commit_options: "--no-verify --signoff"

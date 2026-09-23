@@ -8,7 +8,7 @@
 #    - Require status checks to pass before merging
 #    - Required status checks should include:
 #      * run-tests workflow (all matrix combinations)
-#      * php-cs-fixer workflow
+#      * pint workflow
 #    - Require branches to be up to date before merging
 #
 # 2. Repository Variable (Settings > Secrets and variables > Actions > Variables):

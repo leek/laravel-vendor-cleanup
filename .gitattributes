@@ -11,4 +11,4 @@
 /psalm.xml          export-ignore
 /psalm.xml.dist     export-ignore
 /CHANGELOG.md       export-ignore
-/.php-cs-fixer.dist.php export-ignore
+/pint.json         export-ignore

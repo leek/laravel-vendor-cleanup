@@ -12,14 +12,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        php: [8.3]
-        laravel: [12.*, 11.*]
-        stability: [prefer-stable]
+        php: [8.5, 8.4, 8.3, 8.2]
+        laravel: [13.*, 12.*, 11.*]
+        stability: [prefer-lowest, prefer-stable]
         include:
           - laravel: 11.*
             testbench: 9.*
           - laravel: 12.*
             testbench: 10.*
+          - laravel: 13.*
+            testbench: 11.*
+        exclude:
+          - laravel: 13.*
+            php: 8.2
+          - laravel: 11.*
+            php: 8.5
 
     runs-on: ${{ matrix.os }}
 
@@ -64,6 +71,12 @@ jobs:
         run: |
           echo "::add-matcher::${{ runner.tool_cache }}/php.json"
           echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
+
+      # Every Laravel 11 release (end of life) carries an open advisory, which
+      # Composer blocks by default; allow it so 11.x support stays tested.
+      - name: Allow end-of-life Laravel 11
+        if: matrix.laravel == '11.*'
+        run: composer config policy.advisories.block false
 
       - name: Install dependencies
         run: |
